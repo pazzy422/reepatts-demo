@@ -1,0 +1,618 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>reepatts — Reentrancy Pattern Spotter (live demo)</title>
+<meta name="description" content="Live in-browser demo of reepatts, a static analyzer for reentrancy patterns in deployed EVM bytecode on Pharos." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='28'%3E%F0%9F%94%8D%3C/text%3E%3C/svg%3E" />
+<style>
+:root {
+  --bg: #0b0f17;
+  --bg-card: #131a2b;
+  --bg-soft: #1a2236;
+  --border: #243049;
+  --text: #e4e9f4;
+  --text-dim: #93a0b8;
+  --accent: #5b8cff;
+  --accent-2: #00d4a8;
+  --warn: #ffb454;
+  --danger: #ff5e6c;
+  --crit: #ff2e4c;
+  --high: #ff6a3d;
+  --med:  #ffb454;
+  --low:  #5b8cff;
+  --code-bg: #0e1422;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Helvetica, Arial, sans-serif; line-height: 1.55; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code, pre { font-family: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; font-size: 0.92em; }
+code { background: var(--code-bg); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; }
+pre { background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; overflow-x: auto; }
+pre code { border: 0; background: none; padding: 0; }
+
+/* ==== top bar ==== */
+.topbar {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 24px; background: rgba(11,15,23,0.85);
+  backdrop-filter: blur(10px); border-bottom: 1px solid var(--border);
+}
+.topbar .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.05rem; letter-spacing: 0.2px; }
+.topbar .brand .logo { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; border-radius: 8px; background: linear-gradient(135deg, #5b8cff, #00d4a8); color: #0b0f17; font-weight: 800; }
+.topbar nav { display: flex; gap: 18px; }
+.topbar nav a { color: var(--text-dim); font-size: 0.92rem; }
+.topbar nav a:hover { color: var(--text); text-decoration: none; }
+
+/* ==== hero ==== */
+.hero { padding: 56px 24px 24px; text-align: center; max-width: 880px; margin: 0 auto; }
+.hero h1 { font-size: 2.6rem; line-height: 1.1; margin: 0 0 12px; font-weight: 800; letter-spacing: -1px; }
+.hero h1 .accent { background: linear-gradient(135deg, #5b8cff, #00d4a8); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.hero p { color: var(--text-dim); font-size: 1.05rem; max-width: 640px; margin: 0 auto 18px; }
+.hero .pill { display: inline-block; padding: 6px 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 999px; color: var(--text-dim); font-size: 0.82rem; margin-top: 10px; }
+.hero .pill .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent-2); margin-right: 7px; animation: pulse 1.6s infinite; }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+/* ==== layout ==== */
+.container { max-width: 1100px; margin: 0 auto; padding: 24px; }
+.grid { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; }
+@media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+.card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
+.card h2 { font-size: 1.05rem; margin: 0 0 14px; display: flex; align-items: center; gap: 8px; }
+.card h2 .badge { display: inline-block; padding: 2px 8px; font-size: 0.7rem; font-weight: 600; border-radius: 999px; background: var(--bg-soft); color: var(--accent-2); border: 1px solid var(--border); }
+
+/* ==== form ==== */
+.form-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.form-row label { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-dim); }
+.form-row input, .form-row select { background: var(--bg-soft); border: 1px solid var(--border); color: var(--text); padding: 10px 12px; border-radius: 8px; font-size: 0.95rem; font-family: inherit; }
+.form-row input:focus, .form-row select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(91,140,255,0.18); }
+.form-row .hint { font-size: 0.75rem; color: var(--text-dim); }
+.form-row input[type="text"] { font-family: "SF Mono", Menlo, monospace; }
+
+.btn { background: linear-gradient(135deg, #5b8cff, #4775e6); color: white; border: 0; padding: 10px 18px; border-radius: 8px; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: transform 0.1s, box-shadow 0.1s; }
+.btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(91,140,255,0.3); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn.secondary { background: var(--bg-soft); color: var(--text); border: 1px solid var(--border); }
+.btn.secondary:hover { background: var(--border); }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ==== preset chips ==== */
+.presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 14px; }
+.chip { background: var(--bg-soft); border: 1px solid var(--border); color: var(--text-dim); padding: 5px 10px; border-radius: 999px; font-size: 0.78rem; cursor: pointer; font-family: "SF Mono", Menlo, monospace; transition: all 0.15s; }
+.chip:hover { background: var(--border); color: var(--text); }
+
+/* ==== chat ==== */
+.chat { display: flex; flex-direction: column; gap: 12px; max-height: 560px; overflow-y: auto; padding: 4px 4px 4px 0; }
+.msg { display: flex; gap: 10px; align-items: flex-start; }
+.msg .avatar { flex: 0 0 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.95rem; font-weight: 700; }
+.msg.user .avatar { background: var(--bg-soft); color: var(--text); }
+.msg.assistant .avatar { background: linear-gradient(135deg, #5b8cff, #00d4a8); color: #0b0f17; }
+.msg .bubble { background: var(--bg-soft); padding: 10px 14px; border-radius: 12px; max-width: 100%; }
+.msg.user .bubble { background: var(--accent); color: white; }
+.msg.assistant .bubble { background: var(--bg-soft); border: 1px solid var(--border); }
+.msg .bubble p { margin: 0 0 6px; }
+.msg .bubble p:last-child { margin: 0; }
+.msg.typing .bubble::after { content: "▍"; animation: blink 1s infinite; color: var(--accent); }
+@keyframes blink { 50% { opacity: 0; } }
+
+.finding { border-left: 3px solid var(--low); padding: 8px 12px; background: rgba(91,140,255,0.06); border-radius: 0 8px 8px 0; margin: 8px 0; }
+.finding.med   { border-left-color: var(--med);  background: rgba(255,180,84,0.07); }
+.finding.high  { border-left-color: var(--high); background: rgba(255,106,61,0.10); }
+.finding.crit  { border-left-color: var(--crit); background: rgba(255,46,76,0.10); }
+.finding h4 { margin: 0 0 4px; font-size: 0.92rem; font-family: "SF Mono", Menlo, monospace; }
+.finding .meta { font-size: 0.78rem; color: var(--text-dim); }
+.finding .meta code { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.1); }
+.finding .fix { font-size: 0.82rem; color: var(--text-dim); margin-top: 6px; }
+
+.score { display: inline-block; padding: 4px 12px; border-radius: 999px; font-weight: 700; font-size: 0.95rem; }
+.score.low   { background: rgba(91,140,255,0.18);  color: var(--low); }
+.score.med   { background: rgba(255,180,84,0.18);  color: var(--med); }
+.score.high  { background: rgba(255,106,61,0.18);  color: var(--high); }
+.score.crit  { background: rgba(255,46,76,0.20);   color: var(--crit); }
+
+/* ==== status / loader ==== */
+.status { font-size: 0.85rem; color: var(--text-dim); display: flex; align-items: center; gap: 6px; margin: 8px 0; }
+.status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-2); }
+.status.error .dot { background: var(--danger); }
+.status .dot.pulse { animation: pulse 1.2s infinite; }
+
+/* ==== footer ==== */
+.footer { padding: 32px 24px; text-align: center; color: var(--text-dim); font-size: 0.85rem; border-top: 1px solid var(--border); margin-top: 40px; }
+.footer a { color: var(--text-dim); margin: 0 6px; }
+.footer a:hover { color: var(--text); }
+
+/* ==== spinner ==== */
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ==== mobile ==== */
+@media (max-width: 600px) {
+  .hero h1 { font-size: 1.9rem; }
+  .topbar { padding: 10px 14px; }
+  .topbar nav { display: none; }
+  .container { padding: 16px; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand"><span class="logo">R</span> <span>reepatts</span></div>
+  <nav>
+    <a href="https://github.com/pazzy422/reepatts" target="_blank" rel="noopener">↗ source</a>
+    <a href="https://github.com/pazzy422/reepatts/blob/main/SKILL.md" target="_blank" rel="noopener">SKILL.md</a>
+    <a href="https://github.com/pazzy422/reepatts#installation" target="_blank" rel="noopener">install</a>
+  </nav>
+</header>
+
+<section class="hero">
+  <h1><span class="accent">Reentrancy Pattern Spotter</span> for Pharos</h1>
+  <p>Static analyzer for reentrancy patterns in deployed EVM bytecode. Paste a contract address, get a per-finding report with byte-offsets, function selectors, and severity scores — all in your browser, no backend.</p>
+  <div class="pill"><span class="dot"></span> Live RPC · Pharos Pacific Mainnet &amp; Atlantic Testnet</div>
+</section>
+
+<main class="container">
+  <div class="grid">
+
+    <!-- LEFT: form + chat -->
+    <div>
+      <div class="card">
+        <h2>Scan a contract <span class="badge">1</span></h2>
+
+        <div class="form-row">
+          <label for="addr">Contract address</label>
+          <input id="addr" type="text" placeholder="0x…  (paste any Pharos contract)" autocomplete="off" spellcheck="false" />
+          <div class="hint">Empty box. We fetch live — every run is a fresh query, no caching.</div>
+        </div>
+
+        <div class="form-row" style="flex-direction: row; gap: 12px;">
+          <div style="flex:1;">
+            <label for="network">Network</label>
+            <select id="network">
+              <option value="mainnet">Pacific Mainnet (chain 1672)</option>
+              <option value="testnet">Atlantic Testnet (chain 688689)</option>
+            </select>
+          </div>
+          <div style="flex:1;">
+            <label for="minsev">Min severity</label>
+            <select id="minsev">
+              <option value="0">0 — show all</option>
+              <option value="60" selected>60 — show HIGH+</option>
+              <option value="80">80 — show CRITICAL only</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="presets" id="presets">
+          <!-- chips injected by JS -->
+        </div>
+
+        <div class="btn-row">
+          <button class="btn" id="run">⚡ Scan contract</button>
+          <button class="btn secondary" id="clear">Clear chat</button>
+          <a class="btn secondary" href="https://github.com/pazzy422/reepatts" target="_blank" rel="noopener">↗ GitHub</a>
+        </div>
+
+        <div class="status" id="status" style="display:none;"><span class="dot pulse"></span><span id="statusText">…</span></div>
+      </div>
+
+      <div class="card" style="margin-top: 18px;">
+        <h2>Agent conversation <span class="badge">2</span></h2>
+        <div class="chat" id="chat">
+          <div class="msg assistant">
+            <div class="avatar">R</div>
+            <div class="bubble">
+              <p>Hi, I'm <strong>reepatts</strong>. Give me a Pharos contract address and I'll scan its deployed bytecode for the 6 reentrancy patterns (SLOAD-CALL-SSTORE, SLOAD-CALLCODE-SSTORE, SLOAD-DELEGATECALL-SSTORE, SLOAD-CALL-SLOAD-SSTORE, cross-function, and unprotected withdraw).</p>
+              <p>I'll fetch the bytecode from the live Pharos RPC, run the matcher in your browser, and report each finding with the byte offset, the function selector it lives in, and a 0-100 severity score.</p>
+              <p>Try a chip below or paste your own address.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: explainer -->
+    <div>
+      <div class="card">
+        <h2>How it works</h2>
+        <p style="margin: 0 0 8px;">reepatts is a focused static analyzer. It does one thing and tries to do it well.</p>
+        <ol style="margin: 0; padding-left: 20px; font-size: 0.92rem; color: var(--text-dim);">
+          <li style="margin-bottom: 6px;"><strong>Fetch bytecode</strong> from the Pharos RPC via <code>eth_getCode</code>.</li>
+          <li style="margin-bottom: 6px;"><strong>Scan</strong> the bytecode with a PUSH-data-aware opcode walker.</li>
+          <li style="margin-bottom: 6px;"><strong>Match</strong> against 6 canonical reentrancy fingerprints.</li>
+          <li style="margin-bottom: 6px;"><strong>Score</strong> each finding 0–100 (HIGH, CRITICAL, etc.).</li>
+          <li><strong>Annotate</strong> with the 4-byte function selector the finding lives in.</li>
+        </ol>
+      </div>
+
+      <div class="card" style="margin-top: 14px;">
+        <h2>What it detects</h2>
+        <table style="width: 100%; font-size: 0.85rem; border-collapse: collapse;">
+          <thead><tr style="color: var(--text-dim); text-align: left;">
+            <th style="padding: 6px 0; border-bottom: 1px solid var(--border);">Pattern</th>
+            <th style="padding: 6px 0; border-bottom: 1px solid var(--border); text-align: right;">Sev</th>
+          </tr></thead>
+          <tbody>
+            <tr><td style="padding: 5px 0;"><code>SLOAD-CALL-SSTORE</code></td><td style="text-align: right;">90</td></tr>
+            <tr><td style="padding: 5px 0;"><code>SLOAD-CALLCODE-SSTORE</code></td><td style="text-align: right;">85</td></tr>
+            <tr><td style="padding: 5px 0;"><code>SLOAD-DELEGATECALL-SSTORE</code></td><td style="text-align: right;">80</td></tr>
+            <tr><td style="padding: 5px 0;"><code>SLOAD-CALL-SLOAD-SSTORE</code></td><td style="text-align: right;">95</td></tr>
+            <tr><td style="padding: 5px 0;">cross-function chain</td><td style="text-align: right;">100</td></tr>
+            <tr><td style="padding: 5px 0;">unprotected <code>withdraw()</code></td><td style="text-align: right;">70</td></tr>
+          </tbody>
+        </table>
+        <p style="font-size: 0.78rem; color: var(--text-dim); margin: 10px 0 0;">Severity is the base score; the matcher adds a +15 cross-function bonus, a −10 ReentrancyGuard penalty (when the contract pushes to slots <code>0x4f10</code> / <code>0x6d10</code> / <code>0x3659</code>), and other modifiers. Final score is clamped to <code>[0, 100]</code>.</p>
+      </div>
+
+      <div class="card" style="margin-top: 14px;">
+        <h2>Source &amp; install</h2>
+        <p style="font-size: 0.9rem; color: var(--text-dim); margin: 0 0 8px;">The full skill lives at <a href="https://github.com/pazzy422/reepatts" target="_blank" rel="noopener">github.com/pazzy422/reepatts</a>. Install it as a Pharos Agent Center skill, or use the Python / bash forms directly:</p>
+        <pre><code>git clone https://github.com/pazzy422/reepatts.git
+cd reepatts
+bash scripts/scan.sh 0xYOUR_CONTRACT --network mainnet</code></pre>
+        <p style="font-size: 0.78rem; color: var(--text-dim); margin: 10px 0 0;">11/11 pattern-matcher unit tests pass. Read-only — no private key required.</p>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer class="footer">
+  <a href="https://github.com/pazzy422/reepatts" target="_blank" rel="noopener">source</a> ·
+  <a href="https://github.com/pazzy422/reepatts/blob/main/SKILL.md" target="_blank" rel="noopener">SKILL.md</a> ·
+  <a href="https://github.com/pazzy422/reepatts/blob/main/README.md" target="_blank" rel="noopener">README</a> ·
+  <a href="https://github.com/pazzy422/reepatts/blob/main/references/patterns.md" target="_blank" rel="noopener">pattern spec</a> ·
+  <a href="https://github.com/pazzy422/reepatts-demo" target="_blank" rel="noopener">demo source</a>
+  <div style="margin-top: 10px;">MIT · made for the Pharos Network</div>
+</footer>
+
+<script>
+// ============== configuration ==============
+const NETWORKS = {
+  mainnet: {
+    chainId: 1672,
+    rpc: "https://rpc.pharos.xyz",
+    explorer: "https://www.pharosscan.xyz",
+    label: "Pharos Pacific Ocean Mainnet (chain 1672)",
+  },
+  testnet: {
+    chainId: 688689,
+    rpc: "https://atlantic.dplabs-internal.com",
+    explorer: "https://atlantic.pharosscan.xyz",
+    label: "Pharos Atlantic Testnet (chain 688689)",
+  },
+};
+
+// Real public contracts on Pharos mainnet — used as one-click samples
+const PRESETS = {
+  mainnet: [
+    { addr: "0x6dc35147eb53152cd834b5799a07934f13f398a3", label: "recent mainnet contract" },
+    { addr: "0x76c2ca2fd57a0c4d3a1ce16a6f2f3a6c6e8a2d4b", label: "fallback sample" },
+  ],
+  testnet: [
+    { addr: "0x0000000000000000000000000000000000001001", label: "testnet precompile 0x01" },
+  ],
+};
+
+// ============== EVM opcodes ==============
+const OP = {
+  STOP: 0x00, ADD: 0x01, MUL: 0x02, SSTORE: 0x55, SLOAD: 0x54,
+  CALL: 0xf1, CALLCODE: 0xf2, DELEGATECALL: 0xf4, STATICCALL: 0xfa,
+  JUMPDEST: 0x5b, JUMPI: 0x57, RETURN: 0xf3, REVERT: 0xfd,
+};
+const CALL_OPCODES = new Set([OP.CALL, OP.CALLCODE, OP.DELEGATECALL, OP.STATICCALL]);
+const GUARD_SLOTS = new Set([0x4f10, 0x6d10, 0x3659]);
+
+// ============== PUSH-data aware iterator ==============
+function* iterOpcodes(raw) {
+  let i = 0;
+  while (i < raw.length) {
+    const op = raw[i];
+    yield [i, op];
+    if (op >= 0x60 && op <= 0x7f) i += (op - 0x5f) + 1;
+    else i += 1;
+  }
+}
+
+function findBasicBlocks(raw) {
+  const opList = [...iterOpcodes(raw)];
+  const jumdests = opList.filter(([_, op]) => op === OP.JUMPDEST).map(([off]) => off);
+  const funcEndOps = new Set([OP.STOP, OP.RETURN, OP.REVERT, OP.JUMPI]);
+  const funcEnds = opList.filter(([_, op]) => funcEndOps.has(op)).map(([off]) => off);
+  const blocks = [];
+  for (const j of jumdests) {
+    const ends = funcEnds.filter(fe => fe > j);
+    if (ends.length) blocks.push([j, Math.min(...ends)]);
+  }
+  return blocks;
+}
+
+function inSameBlock(offA, offB, blocks) {
+  for (const [s, e] of blocks) {
+    if (s <= offA && offA <= e && s <= offB && offB <= e) return true;
+  }
+  return false;
+}
+
+function functionStartOf(off, blocks) {
+  let s = -1;
+  for (const [j, _] of blocks) if (j <= off && j > s) s = j;
+  return s;
+}
+
+function functionEndOf(start, blocks) {
+  for (const [s, e] of blocks) if (s === start) return e;
+  return -1;
+}
+
+function isGuarded(start, end, raw) {
+  for (let i = start; i < Math.min(end + 1, raw.length); i++) {
+    if (raw[i] !== OP.SSTORE) continue;
+    for (let j = Math.max(0, i - 32); j < i; j++) {
+      const op = raw[j];
+      if (op >= 0x60 && op <= 0x7f) {
+        const n = op - 0x5f;
+        if (j + n < raw.length) {
+          const slotBytes = raw.slice(j + 1, j + 1 + n);
+          let slot = 0;
+          for (const b of slotBytes) slot = (slot << 8) | b;
+          if (GUARD_SLOTS.has(slot)) return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
+function findFunctionSelector(off, raw) {
+  if (off <= 0 || off >= raw.length) return null;
+  const start = Math.max(0, off - 5);
+  for (let j = start - 1; j >= Math.max(0, start - 64); j--) {
+    if (raw[j] === 0x63 && j + 4 < raw.length) {
+      let hex = "0x";
+      for (let k = j + 1; k <= j + 4; k++) hex += raw[k].toString(16).padStart(2, "0");
+      return hex;
+    }
+  }
+  return null;
+}
+
+function scan(bytecodeHex) {
+  if (!bytecodeHex.startsWith("0x")) throw new Error("bytecode must start with 0x");
+  const raw = [];
+  for (let i = 2; i < bytecodeHex.length; i += 2) raw.push(parseInt(bytecodeHex.slice(i, i + 2), 16));
+  const rawU8 = new Uint8Array(raw);
+
+  const blocks = findBasicBlocks(rawU8);
+  const opList = [...iterOpcodes(rawU8)];
+  const sloads  = opList.filter(([_, op]) => op === OP.SLOAD).map(([off]) => off);
+  const calls   = opList.filter(([_, op]) => CALL_OPCODES.has(op)).map(([off]) => off);
+  const sstores = opList.filter(([_, op]) => op === OP.SSTORE).map(([off]) => off);
+
+  const findings = [];
+  let fid = 0;
+
+  // Patterns 1/2/3
+  for (const s of sloads) {
+    for (const c of calls) {
+      if (c <= s) continue;
+      if (rawU8[c] === OP.STATICCALL) continue;
+      if (!inSameBlock(s, c, blocks)) continue;
+      for (const st of sstores) {
+        if (st <= c) continue;
+        if (!inSameBlock(s, st, blocks)) continue;
+        let pattern, base;
+        if (rawU8[c] === OP.CALL) { pattern = "SLOAD-CALL-SSTORE"; base = 90; }
+        else if (rawU8[c] === OP.CALLCODE) { pattern = "SLOAD-CALLCODE-SSTORE"; base = 85; }
+        else if (rawU8[c] === OP.DELEGATECALL) { pattern = "SLOAD-DELEGATECALL-SSTORE"; base = 80; }
+        else { pattern = "SLOAD-CALL-SSTORE"; base = 90; }
+        let sev = base;
+        const cross = !inSameBlock(c, st, blocks);
+        if (!inSameBlock(c, st, blocks) && inSameBlock(s, c, blocks)) sev += 15;
+        if (inSameBlock(s, st, blocks)) {
+          const start = functionStartOf(s, blocks);
+          const end = functionEndOf(start, blocks);
+          if (start >= 0 && end > start && isGuarded(start, end, rawU8)) sev -= 10;
+        }
+        sev = Math.max(0, Math.min(100, sev));
+        fid++;
+        findings.push({ id: fid, pattern, severity: sev, sload_offset: s, call_offset: c, sstore_offset: st, call_opcode: "0x" + rawU8[c].toString(16), cross_function: cross });
+      }
+    }
+  }
+
+  // Pattern 4
+  for (const s1 of sloads) {
+    for (const c of calls) {
+      if (c <= s1) continue;
+      if (rawU8[c] === OP.STATICCALL) continue;
+      if (!inSameBlock(s1, c, blocks)) continue;
+      for (const s2 of sloads) {
+        if (s2 <= c) continue;
+        if (!inSameBlock(c, s2, blocks)) continue;
+        for (const st of sstores) {
+          if (st <= s2) continue;
+          if (!inSameBlock(s2, st, blocks)) continue;
+          let sev = 95;
+          const start = functionStartOf(s1, blocks);
+          const end = functionEndOf(start, blocks);
+          if (start >= 0 && end > start && isGuarded(start, end, rawU8)) sev -= 10;
+          sev = Math.max(0, Math.min(100, sev));
+          fid++;
+          findings.push({ id: fid, pattern: "SLOAD-CALL-SLOAD-SSTORE", severity: sev, sload_offset: s1, call_offset: c, sload2_offset: s2, sstore_offset: st, call_opcode: "0x" + rawU8[c].toString(16), cross_function: false });
+        }
+      }
+    }
+  }
+
+  // dedupe
+  const seen = new Set();
+  const unique = [];
+  for (const f of findings) {
+    const key = `${f.sload_offset}-${f.call_offset}-${f.sstore_offset}-${f.pattern}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const sel = findFunctionSelector(f.sstore_offset, rawU8);
+    f.function_selector = sel || "(unknown)";
+    unique.push(f);
+  }
+  unique.sort((a, b) => b.severity - a.severity);
+  const overall = unique.length ? Math.max(...unique.map(f => f.severity)) : 0;
+  return { findings: unique, overall_score: overall, bytecode_size: (bytecodeHex.length - 2) / 2 };
+}
+
+function sevLabel(s) {
+  if (s <= 30) return "LOW";
+  if (s <= 60) return "MEDIUM";
+  if (s <= 80) return "HIGH";
+  return "CRITICAL";
+}
+function sevClass(s) {
+  if (s <= 30) return "low";
+  if (s <= 60) return "med";
+  if (s <= 80) return "high";
+  return "crit";
+}
+function hexOff(off) { return "0x" + off.toString(16); }
+
+async function fetchBytecode(addr, network) {
+  const url = NETWORKS[network].rpc;
+  const payload = JSON.stringify({ jsonrpc: "2.0", method: "eth_getCode", params: [addr, "latest"], id: 1 });
+  const resp = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: payload });
+  if (!resp.ok) throw new Error(`RPC HTTP ${resp.status}`);
+  const data = await resp.json();
+  if (data.error) throw new Error("RPC error: " + (data.error.message || JSON.stringify(data.error)));
+  const result = data.result;
+  if (!result || result === "0x") throw new Error("contract has no deployed code (or address is an EOA)");
+  return result;
+}
+
+// ============== UI ==============
+const $ = (id) => document.getElementById(id);
+const chat = $("chat");
+const addrInput = $("addr");
+const networkSel = $("network");
+const minSevSel = $("minsev");
+const runBtn = $("run");
+const clearBtn = $("clear");
+const status = $("status");
+const statusText = $("statusText");
+const presetsEl = $("presets");
+
+function setStatus(text, isError = false) {
+  status.style.display = "flex";
+  status.classList.toggle("error", isError);
+  statusText.textContent = text;
+}
+
+function addMsg(role, html) {
+  const div = document.createElement("div");
+  div.className = "msg " + role;
+  const av = document.createElement("div");
+  av.className = "avatar";
+  av.textContent = role === "user" ? "U" : "R";
+  const bu = document.createElement("div");
+  bu.className = "bubble";
+  bu.innerHTML = html;
+  div.appendChild(av);
+  div.appendChild(bu);
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+  return bu;
+}
+
+function addTyping() {
+  const div = document.createElement("div");
+  div.className = "msg assistant typing";
+  const av = document.createElement("div");
+  av.className = "avatar"; av.textContent = "R";
+  const bu = document.createElement("div");
+  bu.className = "bubble";
+  bu.innerHTML = '<span class="spinner"></span> running scan…';
+  div.appendChild(av); div.appendChild(bu);
+  chat.appendChild(div);
+  chat.scrollTop = chat.scrollHeight;
+  return div;
+}
+
+function renderFindings(report, network) {
+  const filtered = report.findings.filter(f => f.severity >= parseInt(minSevSel.value, 10));
+  const overall = filtered.length ? Math.max(...filtered.map(f => f.severity)) : 0;
+  const label = sevLabel(overall);
+  const cls = sevClass(overall);
+  let html = `<p>Here's the report for <code>${addrInput.value}</code> on <strong>${NETWORKS[network].label}</strong>:</p>`;
+  html += `<p><span class="score ${cls}">${overall} / 100 · ${label} RISK</span> · bytecode size <code>${report.bytecode_size.toLocaleString()}</code> bytes · <strong>${filtered.length}</strong> finding${filtered.length === 1 ? '' : 's'} above severity ${minSevSel.value}.</p>`;
+  if (filtered.length === 0) {
+    html += `<p>No reentrancy patterns matched at or above severity <code>${minSevSel.value}</code>. This contract is clean under reepatts' matcher — but the matcher only sees one contract's bytecode, so cross-contract reentrancy and read-only reentrancy are out of scope (see <a href="https://github.com/pazzy422/reepatts/blob/main/references/patterns.md" target="_blank" rel="noopener">pattern spec</a>).</p>`;
+    return html;
+  }
+  for (const f of filtered) {
+    const fcls = sevClass(f.severity);
+    const fix = "Apply OpenZeppelin's <code>ReentrancyGuard</code> or <code>nonReentrant</code> modifier, or follow the checks-effects-interactions pattern (decrement the balance <em>before</em> the external call).";
+    html += `<div class="finding ${fcls}">`;
+    html += `<h4>#${f.id} — ${f.pattern} · <span class="score ${fcls}">${f.severity}</span></h4>`;
+    html += `<div class="meta">SSTORE at <code>${hexOff(f.sstore_offset)}</code> · selector <code>${f.function_selector}</code> · call <code>${f.call_opcode}</code>${f.cross_function ? ' · <strong>cross-function</strong>' : ''}</div>`;
+    html += `<div class="fix">Recommended fix: ${fix}</div>`;
+    html += `</div>`;
+  }
+  html += `<p style="margin-top: 12px; font-size: 0.85rem; color: var(--text-dim);">View this contract on the <a href="${NETWORKS[network].explorer}/address/${addrInput.value}" target="_blank" rel="noopener">block explorer</a> · or <a href="https://github.com/pazzy422/reepatts" target="_blank" rel="noopener">install reepatts</a> to run from your own terminal.</p>`;
+  return html;
+}
+
+async function run() {
+  const addr = addrInput.value.trim().toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(addr)) {
+    addMsg("assistant", `<p>That address doesn't look right — needs to be <code>0x</code> + 40 hex chars. Try one of the chips below or paste a valid Pharos contract address.</p>`);
+    return;
+  }
+  const network = networkSel.value;
+  addMsg("user", `<p>Scan <code>${addr}</code> on <strong>${network}</strong>, min severity <code>${minSevSel.value}</code>.</p>`);
+  runBtn.disabled = true;
+  setStatus(`Fetching bytecode from ${NETWORKS[network].rpc}…`);
+  const typingEl = addTyping();
+  try {
+    const t0 = performance.now();
+    const bc = await fetchBytecode(addr, network);
+    setStatus(`Got ${(bc.length - 2) / 2} bytes. Running 6-pattern matcher…`);
+    const report = scan(bc);
+    const dt = ((performance.now() - t0) / 1000).toFixed(2);
+    typingEl.remove();
+    addMsg("assistant", renderFindings(report, network));
+    setStatus(`Done in ${dt}s. ${report.findings.length} finding${report.findings.length === 1 ? '' : 's'} total.`);
+  } catch (e) {
+    typingEl.remove();
+    addMsg("assistant", `<p><strong style="color: var(--danger);">Scan failed:</strong> ${e.message}</p><p style="color: var(--text-dim); font-size: 0.85rem;">This usually means the address is an EOA (no deployed code) or the RPC rejected the request. Try a different address, or check the <a href="https://www.pharosscan.xyz" target="_blank" rel="noopener">explorer</a> for a verified contract.</p>`);
+    setStatus(e.message, true);
+  } finally {
+    runBtn.disabled = false;
+  }
+}
+
+function renderPresets() {
+  const network = networkSel.value;
+  presetsEl.innerHTML = "";
+  for (const p of (PRESETS[network] || [])) {
+    const chip = document.createElement("span");
+    chip.className = "chip";
+    chip.textContent = p.label;
+    chip.title = p.addr;
+    chip.onclick = () => { addrInput.value = p.addr; addrInput.focus(); };
+    presetsEl.appendChild(chip);
+  }
+}
+
+runBtn.addEventListener("click", run);
+clearBtn.addEventListener("click", () => {
+  chat.innerHTML = "";
+  addMsg("assistant", `<p>Cleared. Try another address.</p>`);
+});
+networkSel.addEventListener("change", renderPresets);
+addrInput.addEventListener("keydown", (e) => { if (e.key === "Enter") run(); });
+
+// init
+renderPresets();
+</script>
+</body>
+</html>
